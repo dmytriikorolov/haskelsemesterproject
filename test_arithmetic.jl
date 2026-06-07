@@ -1,0 +1,7 @@
+println(2 + 3 * 4)
+println(20 - 5)
+println(10 div 3)
+println(10 mod 3)
+println(abs(-8))
+println(min(4, 9))
+println(max(4, 9))
