@@ -1,5 +1,6 @@
 import System.Environment
 import System.IO
+import Data.Functor (($>))
 import Text.Parsec
 import Text.Parsec.String
 import Text.Parsec.Expr
@@ -96,8 +97,8 @@ number = do
 -- same idea but for bool
 boolean :: Parser Expr
 boolean =
-        (word "true" *> return (Boolean True))
-    <|> (word "false" *> return (Boolean False))
+        (word "true" $> Boolean True)
+    <|> (word "false" $> Boolean False)
 
 
 -- here we parse a variable, e.g x
@@ -149,27 +150,18 @@ term =
 
 -- here we create parser for a binary symbol operator like + or *
 -- assoc tells parsec how repeated operators are grouped
-binarySymbol op assoc =
-    Infix parser assoc
-        where
-            parser =
-                symbol op *> return (Binary op)
+binarySymbol op =
+    Infix (symbol op $> Binary op)
 
 
 -- same idea as before but its for div and mod
-binaryWord op assoc =
-    Infix parser assoc
-        where
-            parser =
-                word op *> return (Binary op)
+binaryWord op =
+    Infix (word op $> Binary op)
 
 
 -- this is for unary ops like ! or -
 unarySymbol op =
-    Prefix parser
-        where
-            parser =
-                symbol op *> return (Unary op)
+    Prefix (symbol op $> Unary op)
 
 
 operators =
@@ -284,7 +276,7 @@ program =
 -- returns runtime error if the name is not found
 findVar :: String -> Env -> Either String Value
 findVar s [] =
-    Left "Runtime error"
+    Left ("Undefined variable: " ++ s)
 findVar s ((name, value) : rest)
     | s == name = Right value
     | otherwise = findVar s rest
@@ -298,12 +290,6 @@ changeVar s value [] =
 changeVar s value ((name, old) : rest)
     | s == name = (name, value) : rest
     | otherwise = (name, old) : changeVar s value rest
-
-
--- this is a short helper for any runtime errors
-bad :: Either String a
-bad =
-    Left "Runtime error"
 
 
 -- beginning of evaluations process
@@ -330,7 +316,7 @@ evalExpr env (Unary "-" e) = do
     value <- evalExpr env e
     case value of
         IntValue n -> Right (IntValue (-n))
-        _ -> bad
+        _ -> Left "Unary - expects an integer"
 
 
 -- eval negation
@@ -338,7 +324,7 @@ evalExpr env (Unary "!" e) = do
     value <- evalExpr env e
     case value of
         BoolValue b -> Right (BoolValue (not b))
-        _ -> bad
+        _ -> Left "Operator ! expects a boolean"
 
 
 -- here we evaluate binary ops, i used the idea we used on tutorial somewhere in the beginning
@@ -347,16 +333,24 @@ evalExpr env (Binary "&&" a b) = do
     left <- evalExpr env a
     case left of
         BoolValue False -> Right (BoolValue False)
-        BoolValue True -> evalExpr env b
-        _ -> bad
+        BoolValue True -> do
+            right <- evalExpr env b
+            case right of
+                BoolValue value -> Right (BoolValue value)
+                _ -> Left "Operator && expects booleans"
+        _ -> Left "Operator && expects booleans"
 
 
 evalExpr env (Binary "||" a b) = do
     left <- evalExpr env a
     case left of
         BoolValue True -> Right (BoolValue True)
-        BoolValue False -> evalExpr env b
-        _ -> bad
+        BoolValue False -> do
+            right <- evalExpr env b
+            case right of
+                BoolValue value -> Right (BoolValue value)
+                _ -> Left "Operator || expects booleans"
+        _ -> Left "Operator || expects booleans"
 
 
 -- this is for normal binary ops
@@ -403,17 +397,17 @@ evalBinary "*" (IntValue a) (IntValue b) =
 
 
 evalBinary "/" (IntValue a) (IntValue b)
-    | b == 0 = bad
+    | b == 0 = Left "Division by zero"
     | otherwise = Right (IntValue (a `div` b))
 
 
 evalBinary "div" (IntValue a) (IntValue b)
-    | b == 0 = bad
+    | b == 0 = Left "Division by zero"
     | otherwise = Right (IntValue (a `div` b))
 
 
 evalBinary "mod" (IntValue a) (IntValue b)
-    | b == 0 = bad
+    | b == 0 = Left "Modulo by zero"
     | otherwise = Right (IntValue (a `mod` b))
 
 
@@ -441,8 +435,13 @@ evalBinary "!=" a b =
     Right (BoolValue (a /= b))
 
 
-evalBinary _ _ _ =
-    bad
+evalBinary op _ _
+    | elem op ["+", "-", "*", "/", "div", "mod"] =
+        Left ("Operator " ++ op ++ " expects integers")
+    | elem op ["<", "<=", ">", ">="] =
+        Left ("Operator " ++ op ++ " expects integers")
+    | otherwise =
+        Left ("Unknown operator: " ++ op)
 
 
 -- same here, all functions
@@ -451,16 +450,40 @@ evalFunction "abs" [IntValue a] =
     Right (IntValue (abs a))
 
 
+evalFunction "abs" [_] =
+    Left "Function abs expects an integer"
+
+
+evalFunction "abs" _ =
+    Left "Function abs expects 1 argument"
+
+
 evalFunction "min" [IntValue a, IntValue b] =
     Right (IntValue (min a b))
+
+
+evalFunction "min" [_, _] =
+    Left "Function min expects integers"
+
+
+evalFunction "min" _ =
+    Left "Function min expects 2 arguments"
 
 
 evalFunction "max" [IntValue a, IntValue b] =
     Right (IntValue (max a b))
 
 
-evalFunction _ _ =
-    bad
+evalFunction "max" [_, _] =
+    Left "Function max expects integers"
+
+
+evalFunction "max" _ =
+    Left "Function max expects 2 arguments"
+
+
+evalFunction name _ =
+    Left ("Unknown function: " ++ name)
 
 
 -- eval assignment and changes env
@@ -485,7 +508,7 @@ evalStmt env (If cond yes no) = do
     value <- evalExpr env cond
     case value of
         BoolValue b -> evalBlock env (if b then yes else no)
-        _ -> bad
+        _ -> Left "If condition must be boolean"
 
 
 evalStmt env (While cond body) =
@@ -499,7 +522,7 @@ evalStmt env (For s first last body) = do
         (IntValue start, IntValue stop) ->
             evalFor env s start stop body
         _ ->
-            bad
+            Left "For range must contain integers"
 
 
 evalStmt env (Let assigns body) = do
@@ -531,7 +554,7 @@ evalWhile env cond body = do
             return (env3, out1 ++ out2)
         BoolValue False ->
             Right (env, [])
-        _ -> bad
+        _ -> Left "While condition must be boolean"
 
 
 -- same recursive idea as while, but with int counter
