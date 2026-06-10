@@ -54,11 +54,8 @@ wordsUsed =
 
 -- run parser and ignore spaces in beginning and in the end
 lexeme :: Parser a -> Parser a
-lexeme p = try $ do
-    spaces
-    x <- p
-    spaces
-    return x
+lexeme p =
+    try (spaces *> p <* spaces)
 
 
 -- here we pass just one piece of text while ignoring whitespaces
@@ -71,12 +68,8 @@ symbol s =
 -- algorithm: notFollowedBy checks that the word is not only beginning
 -- of longer variable name, for example "ifx" etc
 word :: String -> Parser String
-word s = try $ do
-    spaces
-    string s
-    notFollowedBy (alphaNum <|> char '_')
-    spaces
-    return s
+word s =
+    try (spaces *> string s <* notFollowedBy (alphaNum <|> char '_') <* spaces)
 
 
 -- here we parse variable name, trim spaces, then take first letter (it only accepts first symbols as letter)
@@ -96,17 +89,15 @@ name = try $ do
 -- parse Julia integer into Number
 number :: Parser Expr
 number = do
-    spaces
-    digits <- many1 digit
-    spaces
+    digits <- spaces *> many1 digit <* spaces
     return (Number (read digits))
 
 
 -- same idea but for bool
 boolean :: Parser Expr
 boolean =
-        (word "true" >> return (Boolean True))
-    <|> (word "false" >> return (Boolean False))
+        (word "true" *> return (Boolean True))
+    <|> (word "false" *> return (Boolean False))
 
 
 -- here we parse a variable, e.g x
@@ -121,19 +112,14 @@ variable = do
 functionCall :: Parser Expr
 functionCall = try $ do
     s <- name
-    symbol "("
-    args <- sepBy expr (symbol ",")
-    symbol ")"
+    args <- symbol "(" *> sepBy expr (symbol ",") <* symbol ")"
     return (Function s args)
 
 
 -- here we parse expression inside ()
 parens :: Parser Expr
-parens = do
-    symbol "("
-    e <- expr
-    symbol ")"
-    return e
+parens =
+    symbol "(" *> expr <* symbol ")"
 
 
 -- parses one assignment inside let
@@ -141,8 +127,7 @@ parens = do
 oneLetAssign :: Parser (String, Expr)
 oneLetAssign = try $ do
     s <- name
-    symbol "="
-    e <- expr
+    e <- symbol "=" *> expr
     return (s, e)
 
 
@@ -150,10 +135,8 @@ oneLetAssign = try $ do
  -- it has local assignments and one final result expression
 letExpression :: Parser Expr
 letExpression = do
-    word "let"
-    assigns <- many oneLetAssign
-    result <- expr
-    word "end"
+    assigns <- word "let" *> many oneLetAssign
+    result <- expr <* word "end"
     return (LetExpr assigns result)
 
 
@@ -174,35 +157,41 @@ term =
 binarySymbol op assoc =
     Infix parser assoc
         where
-            parser = do
-                symbol op
-                return (Binary op)
+            parser =
+                symbol op *> return (Binary op)
 
 
 -- same idea as before but its for div and mod
 binaryWord op assoc =
     Infix parser assoc
         where
-            parser = do
-                word op
-                return (Binary op)
+            parser =
+                word op *> return (Binary op)
 
 
 -- this is for unary ops like ! or -
 unarySymbol op =
     Prefix parser
         where
-            parser = do
-                symbol op
-                return (Unary op)
+            parser =
+                symbol op *> return (Unary op)
 
 
 operators =
     [
         [ unarySymbol "!", unarySymbol "-" ],
-        [ binarySymbol "*" AssocLeft, binarySymbol "/" AssocLeft, binaryWord "div" AssocLeft, binaryWord "mod" AssocLeft],
-        [ binarySymbol "+" AssocLeft, binarySymbol "-" AssocLeft],
-        [ binarySymbol "<=" AssocNone, binarySymbol ">=" AssocNone, binarySymbol "==" AssocNone, binarySymbol "!=" AssocNone, binarySymbol "<" AssocNone, binarySymbol ">" AssocNone],
+        [ binarySymbol "*" AssocLeft,
+        binarySymbol "/" AssocLeft,
+        binaryWord "div" AssocLeft,
+        binaryWord "mod" AssocLeft],
+        [ binarySymbol "+" AssocLeft,
+        binarySymbol "-" AssocLeft],
+        [ binarySymbol "<=" AssocNone,
+        binarySymbol ">=" AssocNone,
+        binarySymbol "==" AssocNone,
+        binarySymbol "!=" AssocNone,
+        binarySymbol "<" AssocNone,
+        binarySymbol ">" AssocNone],
         [ binarySymbol "&&" AssocLeft ],
         [ binarySymbol "||" AssocLeft ]
     ]
@@ -218,18 +207,14 @@ expr =
 assignment :: Parser Stmt
 assignment = try $ do
     s <- name
-    symbol "="
-    e <- expr
+    e <- symbol "=" *> expr
     return (Assign s e)
 
 
 -- here i parse println with one expression inside parentheses
 printlnStmt :: Parser Stmt
 printlnStmt = do
-    word "println"
-    symbol "("
-    e <- expr
-    symbol ")"
+    e <- word "println" *> symbol "(" *> expr <* symbol ")"
     return (Println e)
 
 
@@ -237,8 +222,7 @@ printlnStmt = do
 -- parse until we see else or end
 ifStmt :: Parser Stmt
 ifStmt = do
-    word "if"
-    cond <- expr
+    cond <- word "if" *> expr
     yes <- manyTill stmt (lookAhead (word "else" <|> word "end"))
     w <- word "else" <|> word "end"
     if w == "else"
@@ -253,8 +237,7 @@ ifStmt = do
 -- body is read until end
 whileStmt :: Parser Stmt
 whileStmt = do
-    word "while"
-    cond <- expr
+    cond <- word "while" *> expr
     body <- manyTill stmt (word "end")
     return (While cond body)
 
@@ -262,12 +245,9 @@ whileStmt = do
 -- this parses for loop like for i = 1:10
 forStmt :: Parser Stmt
 forStmt = do
-    word "for"
-    s <- name
-    symbol "="
-    first <- expr
-    symbol ":"
-    last <- expr
+    s <- word "for" *> name
+    first <- symbol "=" *> expr
+    last <- symbol ":" *> expr
     body <- manyTill stmt (word "end")
     return (For s first last body)
 
@@ -275,8 +255,7 @@ forStmt = do
 -- let which is used as statement block
 letStmt :: Parser Stmt
 letStmt = do
-    word "let"
-    assigns <- many oneLetAssign
+    assigns <- word "let" *> many oneLetAssign
     body <- manyTill stmt (word "end")
     return (Let assigns body)
 
@@ -302,11 +281,8 @@ stmt =
 
 -- this parses the whole program as a list of statements
 program :: Parser [Stmt]
-program = do
-    spaces
-    allStmts <- many stmt
-    eof
-    return allStmts
+program =
+    spaces *> many stmt <* eof
 
 
 -- searches for a variable in the environment
@@ -513,8 +489,7 @@ evalStmt env (ExprStmt e) = do
 evalStmt env (If cond yes no) = do
     value <- evalExpr env cond
     case value of
-        BoolValue True -> evalBlock env yes
-        BoolValue False -> evalBlock env no
+        BoolValue b -> evalBlock env (if b then yes else no)
         _ -> bad
 
 
