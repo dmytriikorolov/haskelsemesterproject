@@ -144,12 +144,7 @@ letExpression = do
 -- this parses a very simple expression like (1+2) or let x = 1 x + 1 end
 term :: Parser Expr
 term =
-        parens
-    <|> letExpression
-    <|> boolean
-    <|> number
-    <|> functionCall
-    <|> variable
+    choice [parens, letExpression, boolean, number, functionCall, variable]
 
 
 -- here we create parser for a binary symbol operator like + or *
