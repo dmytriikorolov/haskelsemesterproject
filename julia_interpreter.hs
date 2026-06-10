@@ -257,13 +257,7 @@ exprStmt = do
 -- this chooses what kind of statement is next
 stmt :: Parser Stmt
 stmt =
-        ifStmt
-    <|> whileStmt
-    <|> forStmt
-    <|> letStmt
-    <|> printlnStmt
-    <|> assignment
-    <|> exprStmt
+    choice [ifStmt, whileStmt, forStmt, letStmt, printlnStmt, assignment, exprStmt]
 
 
 -- this parses the whole program as a list of statements
