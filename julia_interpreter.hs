@@ -595,6 +595,19 @@ runCode env input =
             evalBlock env stmts
 
 
+-- run code in repl and show the value of a single expression
+runReplCode :: Env -> String -> Either String (Env, [String])
+runReplCode env input =
+    case parse program "" input of
+        Left err ->
+            Left "Parse error"
+        Right [ExprStmt e] -> do
+            value <- evalExpr env e
+            return (env, [showValue value])
+        Right stmts ->
+            evalBlock env stmts
+
+
 -- just printing list of strings
 printLines :: [String] -> IO ()
 printLines [] =
@@ -627,7 +640,7 @@ repl env = do
     if line == "quit"
         then return ()
         else
-            case runCode env line of
+            case runReplCode env line of
                 Left err -> do
                     putStrLn err
                     repl env
